@@ -128,6 +128,19 @@ def reasoning_effort_for_model(model: str) -> str | None:
     return 'minimal'
 
 
+def _bedrock_credentials(provider_config):
+    """Build BedrockCredentials from provider config; empty strings count as unset."""
+    from graphiti_core.utils.bedrock import BedrockCredentials
+
+    return BedrockCredentials(
+        access_key_id=provider_config.access_key_id or None,
+        secret_access_key=provider_config.secret_access_key or None,
+        session_token=provider_config.session_token or None,
+        profile=provider_config.profile or None,
+        bearer_token=provider_config.bearer_token or None,
+    )
+
+
 class LLMClientFactory:
     """Factory for creating LLM clients based on configuration."""
 
@@ -305,11 +318,12 @@ class LLMClientFactory:
                     raise ValueError('Bedrock provider configuration not found')
                 from graphiti_core.llm_client.amazon_bedrock_client import AmazonBedrockLLMClient
 
-                logger.info('Creating Amazon Bedrock LLM client (credentials via boto3 default chain)')
+                logger.info('Creating Amazon Bedrock LLM client')
                 return AmazonBedrockLLMClient(
                     config=GraphitiLLMConfig(model=config.model),
                     region=config.providers.bedrock.region,
                     max_tokens=config.max_tokens or 4096,
+                    credentials=_bedrock_credentials(config.providers.bedrock),
                 )
 
             case _:
@@ -432,13 +446,12 @@ class EmbedderFactory:
                     AmazonBedrockEmbedderConfig,
                 )
 
-                logger.info(
-                    'Creating Amazon Bedrock embedder (credentials via boto3 default chain)'
-                )
+                logger.info('Creating Amazon Bedrock embedder')
                 return AmazonBedrockEmbedder(
                     config=AmazonBedrockEmbedderConfig(
                         model=config.model or 'amazon.titan-embed-text-v2:0',
                         region=config.providers.bedrock.region,
+                        credentials=_bedrock_credentials(config.providers.bedrock),
                         embedding_dim=config.dimensions or 1024,
                     )
                 )
@@ -564,6 +577,7 @@ class CrossEncoderFactory:
                 return AmazonBedrockRerankerClient(
                     model=model,
                     region=config.providers.bedrock.region,
+                    credentials=_bedrock_credentials(config.providers.bedrock),
                 )
 
             case _:

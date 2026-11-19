@@ -241,3 +241,58 @@ class TestAmazonBedrockEmbedderCreateBatch:
 
 if __name__ == '__main__':
     pytest.main(['-xvs', __file__])
+
+
+def _body_response(payload: dict):
+    response = {'body': MagicMock()}
+    response['body'].read.return_value.decode.return_value = json.dumps(payload)
+    return response
+
+
+class TestAmazonBedrockEmbedderModels:
+    @pytest.mark.asyncio
+    async def test_titan_v2_requests_configured_dimensions(self, mock_boto3_client):
+        embedder = AmazonBedrockEmbedder(AmazonBedrockEmbedderConfig(embedding_dim=512))
+        embedder.client = mock_boto3_client
+        mock_boto3_client.invoke_model.return_value = _body_response({'embedding': [0.1] * 512})
+
+        await embedder.create('hi')
+
+        body = json.loads(mock_boto3_client.invoke_model.call_args.kwargs['body'])
+        assert body == {'inputText': 'hi', 'dimensions': 512, 'normalize': True}
+
+    @pytest.mark.asyncio
+    async def test_cohere_v3_batches_in_one_call(self, mock_boto3_client):
+        embedder = AmazonBedrockEmbedder(
+            AmazonBedrockEmbedderConfig(model='cohere.embed-english-v3')
+        )
+        embedder.client = mock_boto3_client
+        mock_boto3_client.invoke_model.return_value = _body_response(
+            {'embeddings': {'float': [[1.0], [2.0], [3.0]]}}
+        )
+
+        result = await embedder.create_batch(['a', 'b', 'c'])
+
+        assert result == [[1.0], [2.0], [3.0]]
+        mock_boto3_client.invoke_model.assert_called_once()
+        body = json.loads(mock_boto3_client.invoke_model.call_args.kwargs['body'])
+        assert body['texts'] == ['a', 'b', 'c']
+        assert body['input_type'] == 'search_document'
+
+    @pytest.mark.asyncio
+    async def test_cohere_splits_batches_over_96(self, mock_boto3_client):
+        embedder = AmazonBedrockEmbedder(
+            AmazonBedrockEmbedderConfig(model='cohere.embed-multilingual-v3')
+        )
+        embedder.client = mock_boto3_client
+
+        def respond(**kwargs):
+            n = len(json.loads(kwargs['body'])['texts'])
+            return _body_response({'embeddings': [[0.0]] * n})
+
+        mock_boto3_client.invoke_model.side_effect = respond
+
+        result = await embedder.create_batch(['x'] * 100)
+
+        assert len(result) == 100
+        assert mock_boto3_client.invoke_model.call_count == 2

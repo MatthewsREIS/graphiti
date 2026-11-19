@@ -222,3 +222,32 @@ class TestBedrockFactories:
         )
         client = EmbedderFactory.create(cfg)
         assert client is not None
+
+    def test_bedrock_credentials_reach_boto3(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        boto3_client = MagicMock()
+        monkeypatch.setattr('boto3.client', boto3_client)
+
+        from config.schema import BedrockProviderConfig, LLMConfig, LLMProvidersConfig
+        from services.factories import LLMClientFactory
+
+        cfg = LLMConfig(
+            provider='bedrock',
+            model='openai.gpt-oss-120b-1:0',
+            providers=LLMProvidersConfig(
+                bedrock=BedrockProviderConfig(
+                    region='us-west-2',
+                    access_key_id='AKIATEST',
+                    secret_access_key='secret',
+                    session_token='',  # empty env expansion must count as unset
+                )
+            ),
+        )
+        LLMClientFactory.create(cfg)
+
+        kwargs = boto3_client.call_args.kwargs
+        assert kwargs['region_name'] == 'us-west-2'
+        assert kwargs['aws_access_key_id'] == 'AKIATEST'
+        assert kwargs['aws_secret_access_key'] == 'secret'
+        assert kwargs['aws_session_token'] is None

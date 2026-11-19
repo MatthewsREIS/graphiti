@@ -16,20 +16,10 @@ limitations under the License.
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
+from ..utils.bedrock import BedrockCredentials, create_bedrock_client
 from .client import CrossEncoderClient
-
-if TYPE_CHECKING:
-    import boto3
-else:
-    try:
-        import boto3
-    except ImportError:
-        raise ImportError(
-            'boto3 is required for AmazonBedrockRerankerClient. '
-            'Install it with: pip install graphiti-core[bedrock]'
-        ) from None
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +46,7 @@ class AmazonBedrockRerankerClient(CrossEncoderClient):
         model: BedrockRerankModel = DEFAULT_MODEL,
         region: str = 'us-east-1',
         max_results: int = 100,
+        credentials: BedrockCredentials | None = None,
     ):
         # Soft-validate region support: MODEL_REGIONS is advisory (as of Dec 2025).
         # Unknown regions (e.g. ap-southeast-2 for HLE IRSA) log a warning and proceed
@@ -73,7 +64,7 @@ class AmazonBedrockRerankerClient(CrossEncoderClient):
         self.model = model
         self.region = region
         self.max_results = max_results
-        self.client = boto3.client('bedrock-agent-runtime', region_name=region)
+        self.client = create_bedrock_client('bedrock-agent-runtime', region, credentials)
 
     async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
         if not passages:

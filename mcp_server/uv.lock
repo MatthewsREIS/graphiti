@@ -941,6 +941,7 @@ version = "0.31.2"
 source = { editable = "../" }
 dependencies = [
     { name = "certifi" },
+    { name = "httpx" },
     { name = "neo4j" },
     { name = "numpy" },
     { name = "openai" },
@@ -975,11 +976,9 @@ requires-dist = [
     { name = "google-genai", marker = "extra == 'google-genai'", specifier = ">=1.62.0" },
     { name = "groq", marker = "extra == 'dev'", specifier = ">=0.2.0" },
     { name = "groq", marker = "extra == 'groq'", specifier = ">=0.2.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.29.5" },
     { name = "jupyterlab", marker = "extra == 'dev'", specifier = ">=4.2.4" },
-    { name = "kuzu", marker = "extra == 'dev'", specifier = ">=0.11.3" },
-    { name = "kuzu", marker = "extra == 'kuzu'", specifier = ">=0.11.3" },
-    { name = "langchain-anthropic", marker = "extra == 'dev'", specifier = ">=0.2.4" },
     { name = "langchain-aws", marker = "extra == 'dev'", specifier = ">=0.2.29" },
     { name = "langchain-aws", marker = "extra == 'neptune'", specifier = ">=0.2.29" },
     { name = "langchain-openai", marker = "extra == 'dev'", specifier = ">=0.2.6" },
@@ -1008,7 +1007,7 @@ requires-dist = [
     { name = "voyageai", marker = "extra == 'dev'", specifier = ">=0.2.3" },
     { name = "voyageai", marker = "extra == 'voyageai'", specifier = ">=0.2.3" },
 ]
-provides-extras = ["anthropic", "groq", "google-genai", "kuzu", "falkordb", "falkordblite", "voyageai", "gliner2", "neo4j-opensearch", "sentence-transformers", "neptune", "bedrock", "tracing", "dev"]
+provides-extras = ["anthropic", "groq", "google-genai", "falkordb", "falkordblite", "voyageai", "gliner2", "neo4j-opensearch", "sentence-transformers", "neptune", "bedrock", "tracing", "dev"]
 
 [[package]]
 name = "groq"

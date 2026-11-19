@@ -134,9 +134,19 @@ class VoyageProviderConfig(BaseModel):
 
 
 class BedrockProviderConfig(BaseModel):
-    """Amazon Bedrock provider — credentials via boto3 default chain (IRSA/env)."""
+    """Amazon Bedrock provider.
 
-    region: str = Field(default='ap-southeast-2', description='AWS region')
+    Credentials are optional and resolved in this order: bearer_token (Bedrock API key),
+    access_key_id/secret_access_key(/session_token), profile, then the boto3 default chain
+    (env vars, SSO, IRSA, instance role). Empty strings are treated as unset.
+    """
+
+    region: str = Field(default='us-east-1', description='AWS region')
+    access_key_id: str | None = None
+    secret_access_key: str | None = None
+    session_token: str | None = None
+    profile: str | None = None
+    bearer_token: str | None = None
 
 
 class LLMProvidersConfig(BaseModel):

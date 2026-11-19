@@ -21,6 +21,12 @@ llm:
   providers:
     bedrock:
       region: ${AWS_REGION:us-east-1}
+      # All optional; unset falls back to the boto3 default chain (SSO, IRSA, instance role).
+      bearer_token: ${AWS_BEARER_TOKEN_BEDROCK:}
+      access_key_id: ${AWS_ACCESS_KEY_ID:}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY:}
+      session_token: ${AWS_SESSION_TOKEN:}
+      profile: ${AWS_PROFILE:}
 
     openai:
       api_key: ${OPENAI_API_KEY}
@@ -56,6 +62,12 @@ embedder:
   providers:
     bedrock:
       region: ${AWS_REGION:us-east-1}
+      # All optional; unset falls back to the boto3 default chain (SSO, IRSA, instance role).
+      bearer_token: ${AWS_BEARER_TOKEN_BEDROCK:}
+      access_key_id: ${AWS_ACCESS_KEY_ID:}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY:}
+      session_token: ${AWS_SESSION_TOKEN:}
+      profile: ${AWS_PROFILE:}
 
     openai:
       api_key: ${OPENAI_API_KEY}

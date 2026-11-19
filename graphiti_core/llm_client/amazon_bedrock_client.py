@@ -15,50 +15,57 @@ limitations under the License.
 """
 
 import asyncio
-import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from ..prompts.models import Message
+from ..utils.bedrock import BedrockCredentials, create_bedrock_client
 from .client import LLMClient
 from .config import DEFAULT_MAX_TOKENS, LLMConfig, ModelSize
 from .errors import RateLimitError
 
 if TYPE_CHECKING:
-    import boto3
+    from botocore.exceptions import ClientError
 else:
-    try:
-        import boto3
-    except ImportError:
-        raise ImportError(
-            'boto3 is required for AmazonBedrockLLMClient. '
-            'Install it with: pip install graphiti-core[bedrock]'
-        ) from None
+    from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
+THROTTLING_CODES = {
+    'ThrottlingException',
+    'TooManyRequestsException',
+    'ServiceQuotaExceededException',
+    'ModelNotReadyException',
+}
+
+DEFAULT_MODEL = 'openai.gpt-oss-120b-1:0'
+
 
 class AmazonBedrockLLMClient(LLMClient):
+    """LLM client for any Bedrock chat model (gpt-oss, Claude, Nova, Llama, ...).
+
+    Uses the model-agnostic Converse API. Structured output relies on the JSON schema that
+    LLMClient.generate_response appends to the prompt, the same approach as the Groq client.
+    """
+
     def __init__(
         self,
         config: LLMConfig | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         region: str = 'us-east-1',
+        credentials: BedrockCredentials | None = None,
     ):
         super().__init__(config, cache=False)
 
         self.region = region
-        self.model = (
-            config.model
-            if config and config.model
-            else 'us.anthropic.claude-sonnet-4-20250514-v1:0'
-        )
+        self.model = config.model if config and config.model else DEFAULT_MODEL
+        self.small_model = config.small_model if config and config.small_model else self.model
         self.temperature = config.temperature if config and config.temperature is not None else 0.7
         self.max_tokens = max_tokens
 
-        self.client = boto3.client('bedrock-runtime', region_name=self.region)
+        self.client = create_bedrock_client('bedrock-runtime', self.region, credentials)
 
     async def _generate_response(
         self,
@@ -69,39 +76,30 @@ class AmazonBedrockLLMClient(LLMClient):
         *,
         model: str | None = None,
     ) -> dict:
-        # Convert Message objects to dict format.
-        # Schema injection is handled by LLMClient.generate_response — do not
-        # re-inject here (matches Groq and other providers that use the base path).
-        message_dicts = [msg.model_dump() for msg in messages]
-        selected_model = model or self.model
+        # Schema injection is handled by LLMClient.generate_response - do not re-inject here.
+        selected_model = model or (
+            self.small_model if model_size == ModelSize.small else self.model
+        )
 
-        if response_model:
-            text_response = await self._invoke_bedrock_model(
-                model=selected_model,
-                messages=message_dicts,
-                temperature=self.temperature,
-                max_tokens=max_tokens,
-                response_format='json',
-            )
+        text = await self._converse(
+            model=selected_model,
+            messages=[msg.model_dump() for msg in messages],
+            temperature=self.temperature,
+            max_tokens=max_tokens,
+            response_format='json' if response_model else 'text',
+        )
 
-            try:
-                parsed_model = response_model.model_validate_json(text_response)
-                return parsed_model.model_dump()
-            except Exception as e:
-                logger.error(f'Failed to parse structured Bedrock response: {e}')
-                logger.error(f'Raw response: {text_response}')
-                raise
-        else:
-            text_response = await self._invoke_bedrock_model(
-                model=selected_model,
-                messages=message_dicts,
-                temperature=self.temperature,
-                max_tokens=max_tokens,
-                response_format='text',
-            )
-            return {'content': text_response}
+        if not response_model:
+            return {'content': text}
 
-    async def _invoke_bedrock_model(
+        try:
+            return response_model.model_validate_json(text).model_dump()
+        except Exception as e:
+            logger.error(f'Failed to parse structured Bedrock response: {e}')
+            logger.error(f'Raw response: {text}')
+            raise
+
+    async def _converse(
         self,
         model: str,
         messages: list[dict],
@@ -109,59 +107,45 @@ class AmazonBedrockLLMClient(LLMClient):
         max_tokens: int,
         response_format: str,
     ) -> str:
-        # Separate system prompt and user messages
-        system_prompt = None
-        final_messages = [m for m in messages if m['role'] != 'system']
+        system = [{'text': m['content']} for m in messages if m['role'] == 'system']
+        converse_messages = [
+            {'role': m['role'], 'content': [{'text': m['content']}]}
+            for m in messages
+            if m['role'] != 'system'
+        ]
 
-        for m in messages:
-            if m['role'] == 'system':
-                system_prompt = m['content']
-                break
-
-        body_dict = {
-            'messages': final_messages,
-            'temperature': temperature,
-            'max_tokens': max_tokens,
-            'anthropic_version': 'bedrock-2023-05-31',
+        request: dict[str, Any] = {
+            'modelId': model,
+            'messages': converse_messages,
+            'inferenceConfig': {'maxTokens': max_tokens, 'temperature': temperature},
         }
-
-        if system_prompt:
-            body_dict['system'] = system_prompt
-
-        body = json.dumps(body_dict)
+        if system:
+            request['system'] = system
 
         try:
-            # Use executor to run sync boto3 call in async context
-            loop = asyncio.get_event_loop()
-            resp = await loop.run_in_executor(
-                None,
-                lambda: self.client.invoke_model(
-                    modelId=model,
-                    body=body,
-                    accept='application/json',
-                    contentType='application/json',
-                ),
-            )
-
-            data = json.loads(resp['body'].read().decode('utf-8'))
-
-            if 'content' in data and data['content']:
-                text = data['content'][0].get('text', '')
-            elif 'outputText' in data:
-                text = data['outputText']
-            else:
-                text = json.dumps(data)
-
-            # Clean JSON response format
-            if response_format == 'json':
-                text = self._clean_json_response(text)
-            return text.strip()
-
-        except Exception as e:
-            if 'throttling' in str(e).lower() or 'rate' in str(e).lower():
+            # boto3 is sync: run it in the default executor
+            loop = asyncio.get_running_loop()
+            resp = await loop.run_in_executor(None, lambda: self.client.converse(**request))
+        except ClientError as e:
+            code = e.response.get('Error', {}).get('Code', '')
+            if code in THROTTLING_CODES:
                 raise RateLimitError(f'Rate limit exceeded: {e}') from e
             logger.error(f'Bedrock model invocation failed: {e}')
             raise
+        except Exception as e:
+            logger.error(f'Bedrock model invocation failed: {e}')
+            raise
+
+        # Reasoning models (gpt-oss) return reasoningContent blocks alongside text: keep text only.
+        blocks = resp.get('output', {}).get('message', {}).get('content', [])
+        text = ''.join(b['text'] for b in blocks if 'text' in b)
+
+        if resp.get('stopReason') == 'max_tokens':
+            logger.warning(f'Bedrock response from {model} was truncated at {max_tokens} tokens')
+
+        if response_format == 'json':
+            text = self._clean_json_response(text)
+        return text.strip()
 
     def _clean_json_response(self, text: str) -> str:
         """Clean JSON response from markdown formatting and extract JSON."""
