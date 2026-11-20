@@ -262,3 +262,17 @@ class TestAmazonBedrockLLMClientConfig:
             await bedrock_client._generate_response(messages=MESSAGES, response_model=ResponseModel)
 
         assert secret not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_invocation_errors_log_only_the_error_code(
+        self, bedrock_client, mock_boto3_client, caplog
+    ):
+        mock_boto3_client.converse.side_effect = ClientError(
+            {'Error': {'Code': 'ValidationException', 'Message': 'SENSITIVE-ECHO'}}, 'Converse'
+        )
+
+        with caplog.at_level(logging.DEBUG), pytest.raises(ClientError):
+            await bedrock_client._generate_response(messages=MESSAGES)
+
+        assert 'ValidationException' in caplog.text
+        assert 'SENSITIVE-ECHO' not in caplog.text

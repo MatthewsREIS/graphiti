@@ -134,11 +134,11 @@ class AmazonBedrockLLMClient(LLMClient):
         except ClientError as e:
             code = e.response.get('Error', {}).get('Code', '')
             if code in THROTTLING_CODES:
-                raise RateLimitError(f'Rate limit exceeded: {e}') from e
-            logger.error(f'Bedrock model invocation failed: {e}')
+                raise RateLimitError(f'Rate limit exceeded: {code}') from e
+            logger.error(f'Bedrock model invocation failed: {code or type(e).__name__}')
             raise
         except Exception as e:
-            logger.error(f'Bedrock model invocation failed: {e}')
+            logger.error(f'Bedrock model invocation failed: {type(e).__name__}')
             raise
 
         # Reasoning models (gpt-oss) return reasoningContent blocks alongside text: keep text only.
