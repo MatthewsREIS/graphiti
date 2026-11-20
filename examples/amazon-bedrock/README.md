@@ -6,7 +6,7 @@ This example demonstrates how to use Graphiti with Amazon Bedrock for LLM infere
 
 - **Amazon Bedrock LLM Client**: Uses Claude models for text generation and structured output
 - **Amazon Bedrock Embedder**: Uses Titan embedding models for semantic search
-- **Amazon Bedrock Reranker**: Uses Cohere or Amazon rerank models for result reranking
+- **Amazon Bedrock Reranker**: Uses Cohere or Amazon rerank models for cross-encoder search recipes (needs IAM credentials, not a Bedrock API key)
 - **Neo4j Integration**: Stores and queries the knowledge graph
 - **Hybrid Search**: Combines semantic similarity and BM25 text retrieval
 - **Graph-based Reranking**: Reorders results based on graph distance
@@ -97,7 +97,7 @@ uv run python amazon_bedrock_neo4j.py
 1. **Initializes Graphiti** with Amazon Bedrock clients and Neo4j
 2. **Adds Episodes** containing information about California politics
 3. **Performs Hybrid Search** using semantic similarity and BM25
-4. **Demonstrates Reranking** using Amazon Bedrock reranker
+4. **Demonstrates graph-distance reranking** around a center node (the Bedrock reranker is configured but only used by cross-encoder search recipes)
 5. **Shows Integration Details** including model and region information
 
 ## Expected Output
@@ -119,9 +119,8 @@ Valid from: [timestamp]
 
 Reranking search results based on graph distance:
 Using center node UUID: [uuid]
-Reranker model: cohere.rerank-v3-5:0
 
-Reranked Search Results (using Amazon Bedrock reranker):
+Reranked Search Results (graph distance):
 UUID: [uuid]
 Fact: Kamala Harris is the Attorney General of California
 Valid from: [timestamp]

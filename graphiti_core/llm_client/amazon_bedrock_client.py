@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 
 from ..prompts.models import Message
-from ..utils.bedrock import BedrockCredentials, create_bedrock_client
+from ..utils.bedrock import BedrockCredentials, create_bedrock_client, error_label
 from .client import LLMClient
 from .config import DEFAULT_MAX_TOKENS, LLMConfig, ModelSize
 from .errors import RateLimitError
@@ -95,12 +95,19 @@ class AmazonBedrockLLMClient(LLMClient):
         if not response_model:
             return {'content': text}
 
+        # Decode first: a syntax error is a json.JSONDecodeError, which the base class retries.
+        # A schema mismatch is a ValidationError and is not retried.
         try:
-            return response_model.model_validate_json(text).model_dump()
-        except Exception as e:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
             # Never log the response or the validation input: it can contain episode data.
+            logger.error(f'Bedrock response is not valid JSON ({len(text)} chars)')
+            raise e
+        try:
+            return response_model.model_validate(data).model_dump()
+        except Exception as e:
             logger.error(
-                f'Failed to parse structured Bedrock response ({type(e).__name__}, {len(text)} chars)'
+                f'Failed to validate structured Bedrock response ({type(e).__name__}, {len(text)} chars)'
             )
             raise
 
@@ -135,10 +142,10 @@ class AmazonBedrockLLMClient(LLMClient):
             code = e.response.get('Error', {}).get('Code', '')
             if code in THROTTLING_CODES:
                 raise RateLimitError(f'Rate limit exceeded: {code}') from e
-            logger.error(f'Bedrock model invocation failed: {code or type(e).__name__}')
+            logger.error(f'Bedrock model invocation failed: {error_label(e)}')
             raise
         except Exception as e:
-            logger.error(f'Bedrock model invocation failed: {type(e).__name__}')
+            logger.error(f'Bedrock model invocation failed: {error_label(e)}')
             raise
 
         # Reasoning models (gpt-oss) return reasoningContent blocks alongside text: keep text only.
@@ -164,9 +171,13 @@ class AmazonBedrockLLMClient(LLMClient):
         candidate = text[start:]
 
         # Decode normally first. Doubled braces ({{...}}) are a template artifact some models
-        # echo back, so recover from them only when a normal decode fails.
+        # echo back, so recover from them only when the text starts with '{{' and a normal
+        # decode fails.
         decoder = json.JSONDecoder()
-        for attempt in (candidate, re.sub(r'\}\}\s*$', '}', candidate[1:])):
+        attempts = [candidate]
+        if candidate.startswith('{{'):
+            attempts.append(re.sub(r'\}\}\s*$', '}', candidate[1:]))
+        for attempt in attempts:
             try:
                 _, end = decoder.raw_decode(attempt)
                 return attempt[:end].strip()

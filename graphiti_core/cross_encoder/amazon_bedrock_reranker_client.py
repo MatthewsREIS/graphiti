@@ -18,7 +18,7 @@ import asyncio
 import logging
 from typing import Literal
 
-from ..utils.bedrock import BedrockCredentials, create_bedrock_client
+from ..utils.bedrock import BedrockCredentials, create_bedrock_client, error_label
 from .client import CrossEncoderClient
 
 logger = logging.getLogger(__name__)
@@ -116,5 +116,6 @@ class AmazonBedrockRerankerClient(CrossEncoderClient):
             return results
 
         except Exception as e:
-            logger.error(f'Error in Bedrock reranking: {e}')
+            # Never log the message: it can echo the query or passages.
+            logger.error(f'Error in Bedrock reranking: {error_label(e)}')
             raise

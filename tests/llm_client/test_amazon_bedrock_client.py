@@ -276,3 +276,33 @@ class TestAmazonBedrockLLMClientConfig:
 
         assert 'ValidationException' in caplog.text
         assert 'SENSITIVE-ECHO' not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_is_retried_by_the_base_policy(
+        self, bedrock_client, mock_boto3_client
+    ):
+        from graphiti_core.llm_client.client import is_server_or_retry_error
+
+        mock_boto3_client.converse.return_value = converse_response('{"test_field": ')
+
+        with pytest.raises(json.JSONDecodeError) as exc:
+            await bedrock_client._generate_response(messages=MESSAGES, response_model=ResponseModel)
+
+        assert is_server_or_retry_error(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_schema_mismatch_is_not_a_json_error(self, bedrock_client, mock_boto3_client):
+        mock_boto3_client.converse.return_value = converse_response('{"unrelated": 1}')
+
+        with pytest.raises(ValueError) as exc:
+            await bedrock_client._generate_response(messages=MESSAGES, response_model=ResponseModel)
+
+        assert not isinstance(exc.value, json.JSONDecodeError)
+
+    @pytest.mark.asyncio
+    async def test_clean_json_does_not_mangle_truncated_objects(self, bedrock_client):
+        # A truncated object must stay an object-shaped string so it fails as bad JSON,
+        # not decode as a bare string after dropping the first character.
+        cleaned = bedrock_client._clean_json_response('{"test_field": ')
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(cleaned)

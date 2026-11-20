@@ -17,9 +17,11 @@ limitations under the License.
 # Running tests: pytest -xvs tests/embedder/test_amazon_bedrock.py
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from graphiti_core.embedder.amazon_bedrock import (
     DEFAULT_EMBEDDING_MODEL,
@@ -60,10 +62,10 @@ class TestAmazonBedrockEmbedderInitialization:
 
     def test_init_with_config(self):
         """Test initialization with a config object."""
-        config = AmazonBedrockEmbedderConfig(model='custom.model:0', region='eu-west-1')
+        config = AmazonBedrockEmbedderConfig(model='amazon.titan-embed-text-v1', region='eu-west-1')
         embedder = AmazonBedrockEmbedder(config=config)
 
-        assert embedder.config.model == 'custom.model:0'
+        assert embedder.config.model == 'amazon.titan-embed-text-v1'
         assert embedder.config.region == 'eu-west-1'
 
     def test_init_without_config(self):
@@ -261,38 +263,32 @@ class TestAmazonBedrockEmbedderModels:
         body = json.loads(mock_boto3_client.invoke_model.call_args.kwargs['body'])
         assert body == {'inputText': 'hi', 'dimensions': 512, 'normalize': True}
 
-    @pytest.mark.asyncio
-    async def test_cohere_v3_batches_in_one_call(self, mock_boto3_client):
-        embedder = AmazonBedrockEmbedder(
-            AmazonBedrockEmbedderConfig(model='cohere.embed-english-v3')
-        )
-        embedder.client = mock_boto3_client
-        mock_boto3_client.invoke_model.return_value = _body_response(
-            {'embeddings': {'float': [[1.0], [2.0], [3.0]]}}
-        )
+    @pytest.mark.parametrize('dim', [256, 512, 1024])
+    def test_titan_v2_accepts_supported_dimensions(self, dim):
+        assert AmazonBedrockEmbedder(AmazonBedrockEmbedderConfig(embedding_dim=dim))
 
-        result = await embedder.create_batch(['a', 'b', 'c'])
+    @pytest.mark.parametrize('dim', [1536, 768, 0])
+    def test_titan_v2_rejects_unsupported_dimensions(self, dim):
+        with pytest.raises(ValueError, match='256, 512 or 1024'):
+            AmazonBedrockEmbedder(AmazonBedrockEmbedderConfig(embedding_dim=dim))
 
-        assert result == [[1.0], [2.0], [3.0]]
-        mock_boto3_client.invoke_model.assert_called_once()
-        body = json.loads(mock_boto3_client.invoke_model.call_args.kwargs['body'])
-        assert body['texts'] == ['a', 'b', 'c']
-        assert body['input_type'] == 'search_document'
+    @pytest.mark.parametrize('model', ['cohere.embed-english-v3', 'cohere.embed-v4:0'])
+    def test_non_titan_models_are_rejected(self, model):
+        # Graphiti's embedder interface cannot say whether text is a query or a document,
+        # which Cohere models need, so only Titan is supported.
+        with pytest.raises(ValueError, match='Titan'):
+            AmazonBedrockEmbedder(AmazonBedrockEmbedderConfig(model=model))
 
     @pytest.mark.asyncio
-    async def test_cohere_splits_batches_over_96(self, mock_boto3_client):
-        embedder = AmazonBedrockEmbedder(
-            AmazonBedrockEmbedderConfig(model='cohere.embed-multilingual-v3')
+    async def test_failures_log_only_the_error_code(
+        self, bedrock_embedder, mock_boto3_client, caplog
+    ):
+        mock_boto3_client.invoke_model.side_effect = ClientError(
+            {'Error': {'Code': 'ValidationException', 'Message': 'SENSITIVE-ECHO'}}, 'InvokeModel'
         )
-        embedder.client = mock_boto3_client
 
-        def respond(**kwargs):
-            n = len(json.loads(kwargs['body'])['texts'])
-            return _body_response({'embeddings': [[0.0]] * n})
+        with caplog.at_level(logging.DEBUG), pytest.raises(ClientError):
+            await bedrock_embedder.create('episode text')
 
-        mock_boto3_client.invoke_model.side_effect = respond
-
-        result = await embedder.create_batch(['x'] * 100)
-
-        assert len(result) == 100
-        assert mock_boto3_client.invoke_model.call_count == 2
+        assert 'ValidationException' in caplog.text
+        assert 'SENSITIVE-ECHO' not in caplog.text

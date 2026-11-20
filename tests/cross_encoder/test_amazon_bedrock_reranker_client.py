@@ -16,6 +16,7 @@ limitations under the License.
 
 # Running tests: pytest -xvs tests/cross_encoder/test_amazon_bedrock_reranker_client.py
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -301,3 +302,21 @@ class TestAmazonBedrockRerankerClientConfiguration:
 
 if __name__ == '__main__':
     pytest.main(['-v', 'test_amazon_bedrock_reranker_client.py'])
+
+
+class TestAmazonBedrockRerankerClientLogging:
+    @pytest.mark.asyncio
+    async def test_failures_log_only_the_error_code(
+        self, reranker_client, mock_boto3_client, caplog
+    ):
+        from botocore.exceptions import ClientError
+
+        mock_boto3_client.rerank.side_effect = ClientError(
+            {'Error': {'Code': 'ValidationException', 'Message': 'SENSITIVE-ECHO'}}, 'Rerank'
+        )
+
+        with caplog.at_level(logging.DEBUG), pytest.raises(ClientError):
+            await reranker_client.rank('query', ['passage'])
+
+        assert 'ValidationException' in caplog.text
+        assert 'SENSITIVE-ECHO' not in caplog.text

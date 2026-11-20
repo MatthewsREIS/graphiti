@@ -33,6 +33,17 @@ else:
         ) from None
 
 BEDROCK_BEARER_TOKEN_ENV = 'AWS_BEARER_TOKEN_BEDROCK'
+# Bedrock API keys work only with these services. Others (e.g. bedrock-agent-runtime, used for
+# Rerank) need IAM credentials, so they ignore the bearer token.
+BEARER_TOKEN_SERVICES = ('bedrock', 'bedrock-runtime')
+
+
+def error_label(e: BaseException) -> str:
+    """AWS error code, or the exception type. Safe to log: it never includes the message,
+    which can echo request content such as episode text."""
+    response = getattr(e, 'response', None)
+    code = response.get('Error', {}).get('Code') if isinstance(response, dict) else None
+    return code or type(e).__name__
 
 
 class BedrockCredentials(BaseModel):
@@ -62,7 +73,7 @@ def create_bedrock_client(
 
     client_kwargs.setdefault('config', Config(read_timeout=300, retries={'max_attempts': 3}))
 
-    if creds.bearer_token:
+    if creds.bearer_token and service in BEARER_TOKEN_SERVICES:
         # ponytail: botocore only reads the Bedrock API key from the environment, so this is
         # process-wide. Fine for one Bedrock identity per process.
         os.environ[BEDROCK_BEARER_TOKEN_ENV] = creds.bearer_token

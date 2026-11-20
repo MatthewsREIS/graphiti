@@ -14,8 +14,10 @@ permissions:
   id-token: write # sts:AssumeRoleWithWebIdentity
   contents: read
 
+# One group per commit: a shared group keeps only one pending run, so a middle commit's
+# image would never be built.
 concurrency:
-  group: build-graphiti-mcp-image
+  group: build-graphiti-mcp-image-${{ github.sha }}
   cancel-in-progress: false
 
 env:

@@ -19,13 +19,13 @@ import json
 import logging
 from collections.abc import Iterable
 
-from ..utils.bedrock import BedrockCredentials, create_bedrock_client
+from ..utils.bedrock import BedrockCredentials, create_bedrock_client, error_label
 from .client import EmbedderClient, EmbedderConfig
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
-COHERE_MAX_BATCH = 96
+TITAN_V2_DIMENSIONS = (256, 512, 1024)
 
 
 class AmazonBedrockEmbedderConfig(EmbedderConfig):
@@ -35,45 +35,45 @@ class AmazonBedrockEmbedderConfig(EmbedderConfig):
 
 
 class AmazonBedrockEmbedder(EmbedderClient):
-    """Bedrock embedder for Amazon Titan (v1/v2) and Cohere Embed (v3/v4) models."""
+    """Bedrock embedder for Amazon Titan Text Embeddings (v1 and v2).
+
+    Cohere Embed is not supported: it needs to know whether text is a search query or a stored
+    document, and Graphiti's embedder interface does not carry that.
+    """
 
     def __init__(self, config: AmazonBedrockEmbedderConfig | None = None):
         self.config = config or AmazonBedrockEmbedderConfig()
+
+        if 'titan-embed' not in self.config.model:
+            raise ValueError(
+                f'Unsupported Bedrock embedding model {self.config.model!r}: only Amazon Titan '
+                'embedding models are supported'
+            )
+        if (
+            'titan-embed-text-v2' in self.config.model
+            and self.config.embedding_dim not in TITAN_V2_DIMENSIONS
+        ):
+            raise ValueError(
+                f'Titan Text Embeddings v2 supports 256, 512 or 1024 dimensions, '
+                f'not {self.config.embedding_dim}'
+            )
+
         self.client = create_bedrock_client(
             'bedrock-runtime', self.config.region, self.config.credentials
         )
 
-    @property
-    def _is_cohere(self) -> bool:
-        return 'cohere' in self.config.model
-
-    def _invoke(self, body: dict) -> dict:
+    def _embed(self, text: str) -> list[float]:
+        body: dict = {'inputText': text}
+        if 'titan-embed-text-v2' in self.config.model:
+            body['dimensions'] = self.config.embedding_dim
+            body['normalize'] = True
         response = self.client.invoke_model(
             modelId=self.config.model,
             body=json.dumps(body),
             accept='application/json',
             contentType='application/json',
         )
-        return json.loads(response['body'].read().decode('utf-8'))
-
-    def _embed_titan(self, text: str) -> list[float]:
-        body: dict = {'inputText': text}
-        if 'titan-embed-text-v2' in self.config.model:
-            body['dimensions'] = self.config.embedding_dim
-            body['normalize'] = True
-        return self._invoke(body)['embedding']
-
-    def _embed_cohere(self, texts: list[str]) -> list[list[float]]:
-        body = {
-            'texts': texts,
-            'input_type': 'search_document',
-            'embedding_types': ['float'],
-        }
-        if 'embed-v4' in self.config.model:
-            body['output_dimension'] = self.config.embedding_dim
-        embeddings = self._invoke(body)['embeddings']
-        # v3 returns a list of vectors; with embedding_types it returns {'float': [...]}
-        return embeddings['float'] if isinstance(embeddings, dict) else embeddings
+        return json.loads(response['body'].read().decode('utf-8'))['embedding']
 
     async def create(
         self, input_data: str | list[str] | Iterable[int] | Iterable[Iterable[int]]
@@ -87,25 +87,12 @@ class AmazonBedrockEmbedder(EmbedderClient):
 
         try:
             loop = asyncio.get_running_loop()
-            if self._is_cohere:
-                return (await loop.run_in_executor(None, self._embed_cohere, [text]))[0]
-            return await loop.run_in_executor(None, self._embed_titan, text)
+            return await loop.run_in_executor(None, self._embed, text)
         except Exception as e:
-            logger.error(f'Bedrock embedding failed: {e}')
+            # Never log the message: it can echo the text being embedded.
+            logger.error(f'Bedrock embedding failed: {error_label(e)}')
             raise
 
     async def create_batch(self, input_data_list: list[str]) -> list[list[float]]:
-        if not self._is_cohere:
-            # Titan takes one input per call
-            return list(await asyncio.gather(*(self.create(text) for text in input_data_list)))
-
-        loop = asyncio.get_running_loop()
-        embeddings: list[list[float]] = []
-        try:
-            for i in range(0, len(input_data_list), COHERE_MAX_BATCH):
-                chunk = input_data_list[i : i + COHERE_MAX_BATCH]
-                embeddings.extend(await loop.run_in_executor(None, self._embed_cohere, chunk))
-        except Exception as e:
-            logger.error(f'Bedrock embedding failed: {e}')
-            raise
-        return embeddings
+        # Titan takes one input per call
+        return list(await asyncio.gather(*(self.create(text) for text in input_data_list)))

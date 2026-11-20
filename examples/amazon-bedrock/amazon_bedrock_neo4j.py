@@ -179,13 +179,15 @@ async def main():
             print('---')
 
         #################################################
-        # CENTER NODE SEARCH WITH RERANKING
+        # CENTER NODE SEARCH (GRAPH-DISTANCE RERANKING)
         #################################################
         # For more contextually relevant results, you can
         # use a center node to rerank search results based
         # on their graph distance to a specific node.
-        # This example demonstrates the Amazon Bedrock
-        # reranker in action.
+        # This uses graph distance only. It does not call
+        # the Amazon Bedrock reranker, which Graphiti uses
+        # only for cross-encoder search recipes such as
+        # EDGE_HYBRID_SEARCH_CROSS_ENCODER.
         #################################################
 
         # Use the top search result's UUID as the center node for reranking
@@ -195,7 +197,6 @@ async def main():
 
             print('\nReranking search results based on graph distance:')
             print(f'Using center node UUID: {center_node_uuid}')
-            print(f'Reranker model: {reranker_model}')
 
             reranked_results = await graphiti.search(
                 'Who was the California Attorney General?',
@@ -203,7 +204,7 @@ async def main():
             )
 
             # Print reranked search results
-            print('\nReranked Search Results (using Amazon Bedrock reranker):')
+            print('\nReranked Search Results (graph distance):')
             for result in reranked_results:
                 print(f'UUID: {result.uuid}')
                 print(f'Fact: {result.fact}')
