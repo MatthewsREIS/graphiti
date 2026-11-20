@@ -31,6 +31,16 @@ secrets:
 service:
   port: 8000
 
+# Public route for /mcp through Contour, gated by a shared bearer token. Needs the Contour CRDs.
+httpProxy:
+  enabled: false
+  fqdn: ""
+  tlsSecretName: ""
+  # Clients send "Authorization: Bearer <token>". Required when enabled.
+  bearerToken: ""
+  # Long enough for streaming responses.
+  timeout: 300s
+
 resources:
   requests:
     cpu: 100m
