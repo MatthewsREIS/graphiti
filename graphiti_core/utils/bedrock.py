@@ -60,9 +60,6 @@ def create_bedrock_client(
     """Create a boto3 client (bedrock-runtime, bedrock-agent-runtime) for the given credentials."""
     creds = credentials or BedrockCredentials()
 
-    if bool(creds.access_key_id) != bool(creds.secret_access_key):
-        raise ValueError('Bedrock access_key_id and secret_access_key must be set together')
-
     client_kwargs.setdefault('config', Config(read_timeout=300, retries={'max_attempts': 3}))
 
     if creds.bearer_token:
@@ -70,6 +67,9 @@ def create_bedrock_client(
         # process-wide. Fine for one Bedrock identity per process.
         os.environ[BEDROCK_BEARER_TOKEN_ENV] = creds.bearer_token
         return boto3.client(service, region_name=region, **client_kwargs)
+
+    if bool(creds.access_key_id) != bool(creds.secret_access_key):
+        raise ValueError('Bedrock access_key_id and secret_access_key must be set together')
 
     if creds.access_key_id:
         return boto3.client(

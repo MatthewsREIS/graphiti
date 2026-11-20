@@ -5,3 +5,9 @@
 .pytest_cache
 **/.ruff_cache
 images
+.env
+.env.*
+**/.env
+**/.env.*
+.aws
+**/*.pem

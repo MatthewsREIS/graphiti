@@ -15,7 +15,9 @@ limitations under the License.
 """
 
 import asyncio
+import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -53,7 +55,7 @@ class AmazonBedrockLLMClient(LLMClient):
     def __init__(
         self,
         config: LLMConfig | None = None,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
+        max_tokens: int | None = None,
         region: str = 'us-east-1',
         credentials: BedrockCredentials | None = None,
     ):
@@ -63,7 +65,8 @@ class AmazonBedrockLLMClient(LLMClient):
         self.model = config.model if config and config.model else DEFAULT_MODEL
         self.small_model = config.small_model if config and config.small_model else self.model
         self.temperature = config.temperature if config and config.temperature is not None else 0.7
-        self.max_tokens = max_tokens
+        if max_tokens is not None:
+            self.max_tokens = max_tokens
 
         self.client = create_bedrock_client('bedrock-runtime', self.region, credentials)
 
@@ -95,8 +98,10 @@ class AmazonBedrockLLMClient(LLMClient):
         try:
             return response_model.model_validate_json(text).model_dump()
         except Exception as e:
-            logger.error(f'Failed to parse structured Bedrock response: {e}')
-            logger.error(f'Raw response: {text}')
+            # Never log the response or the validation input: it can contain episode data.
+            logger.error(
+                f'Failed to parse structured Bedrock response ({type(e).__name__}, {len(text)} chars)'
+            )
             raise
 
     async def _converse(
@@ -148,38 +153,23 @@ class AmazonBedrockLLMClient(LLMClient):
         return text.strip()
 
     def _clean_json_response(self, text: str) -> str:
-        """Clean JSON response from markdown formatting and extract JSON."""
-        import re
-
+        """Extract the JSON object from a model response (markdown fences, surrounding prose)."""
         text = text.strip()
-
-        logger.debug(f'Raw Bedrock response: {text[:500]}...')
-
-        # Remove code blocks
         text = re.sub(r'^```(?:json|JSON)?\s*', '', text, flags=re.MULTILINE)
         text = re.sub(r'```\s*$', '', text, flags=re.MULTILINE)
 
-        # Fix double braces issue
-        text = re.sub(r'^\{\{', '{', text)
-        text = re.sub(r'\}\}$', '}', text)
+        start = text.find('{')
+        if start == -1:
+            return text.strip()
+        candidate = text[start:]
 
-        # Find JSON object - look for first { and last }
-        start_idx = text.find('{')
-        if start_idx != -1:
-            # Find the matching closing brace
-            brace_count = 0
-            end_idx = -1
-            for i in range(start_idx, len(text)):
-                if text[i] == '{':
-                    brace_count += 1
-                elif text[i] == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        end_idx = i + 1
-                        break
-
-            if end_idx != -1:
-                text = text[start_idx:end_idx]
-
-        logger.debug(f'Cleaned JSON response: {text[:200]}...')
-        return text.strip()
+        # Decode normally first. Doubled braces ({{...}}) are a template artifact some models
+        # echo back, so recover from them only when a normal decode fails.
+        decoder = json.JSONDecoder()
+        for attempt in (candidate, re.sub(r'\}\}\s*$', '}', candidate[1:])):
+            try:
+                _, end = decoder.raw_decode(attempt)
+                return attempt[:end].strip()
+            except ValueError:
+                continue
+        return candidate.strip()

@@ -57,3 +57,12 @@ def test_bearer_token_sets_env_and_wins_over_keys(boto3_client):
         os.environ.pop(BEDROCK_BEARER_TOKEN_ENV)
 
     assert 'aws_access_key_id' not in boto3_client.call_args.kwargs
+
+
+def test_bearer_token_wins_over_partial_iam_keys(boto3_client):
+    creds = BedrockCredentials(bearer_token='tok', access_key_id='A')
+    with patch.dict(os.environ, {}, clear=False):
+        create_bedrock_client('bedrock-runtime', 'us-east-1', creds)
+        os.environ.pop(BEDROCK_BEARER_TOKEN_ENV, None)
+
+    assert 'aws_access_key_id' not in boto3_client.call_args.kwargs

@@ -17,6 +17,7 @@ limitations under the License.
 # Running tests: pytest -xvs tests/llm_client/test_amazon_bedrock_client.py
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,7 +38,7 @@ class ResponseModel(BaseModel):
     optional_field: int = 0
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_boto3_client():
     """Fixture to mock the boto3 bedrock-runtime client."""
     with patch('boto3.client') as mock_client:
@@ -222,3 +223,42 @@ class TestAmazonBedrockLLMClientGenerateResponse:
             )
             == '{"test": "value"}'
         )
+
+    @pytest.mark.asyncio
+    async def test_clean_json_keeps_valid_nested_objects(self, bedrock_client):
+        nested = '{"attributes":{"name":"Alice"}}'
+        assert bedrock_client._clean_json_response(nested) == nested
+        assert bedrock_client._clean_json_response(f'```json\n{nested}\n```') == nested
+
+    @pytest.mark.asyncio
+    async def test_clean_json_keeps_braces_inside_strings(self, bedrock_client):
+        text = '{"a":"x}y","b":{"c":"{"}}'
+        assert json.loads(bedrock_client._clean_json_response(text + ' trailing')) == json.loads(
+            text
+        )
+
+    @pytest.mark.asyncio
+    async def test_clean_json_recovers_doubled_braces_only_when_needed(self, bedrock_client):
+        assert bedrock_client._clean_json_response('{{"a": {"b": 1}}}') == '{"a": {"b": 1}}'
+
+
+class TestAmazonBedrockLLMClientConfig:
+    def test_config_max_tokens_is_kept_when_not_overridden(self):
+        client = AmazonBedrockLLMClient(config=LLMConfig(model='m', max_tokens=1000))
+        assert client.max_tokens == 1000
+
+    def test_explicit_max_tokens_overrides_config(self):
+        client = AmazonBedrockLLMClient(config=LLMConfig(model='m', max_tokens=1000), max_tokens=50)
+        assert client.max_tokens == 50
+
+    @pytest.mark.asyncio
+    async def test_failures_do_not_log_model_output(
+        self, bedrock_client, mock_boto3_client, caplog
+    ):
+        secret = 'SENSITIVE-EPISODE-TEXT'
+        mock_boto3_client.converse.return_value = converse_response(f'not json {secret}')
+
+        with caplog.at_level(logging.DEBUG), pytest.raises(ValueError):
+            await bedrock_client._generate_response(messages=MESSAGES, response_model=ResponseModel)
+
+        assert secret not in caplog.text

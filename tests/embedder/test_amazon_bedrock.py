@@ -28,7 +28,7 @@ from graphiti_core.embedder.amazon_bedrock import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_boto3_client():
     """Create a mocked boto3 bedrock-runtime client."""
     with patch('boto3.client') as mock_client:

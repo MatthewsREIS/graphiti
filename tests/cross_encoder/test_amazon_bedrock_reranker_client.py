@@ -27,7 +27,7 @@ from graphiti_core.cross_encoder.amazon_bedrock_reranker_client import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_boto3_client():
     """Fixture to mock the boto3 bedrock-agent-runtime client."""
     with patch('boto3.client') as mock_client:

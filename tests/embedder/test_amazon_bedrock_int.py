@@ -40,8 +40,11 @@ def _has_aws_credentials():
     return credentials_file.exists()
 
 
-# Skip all tests if AWS credentials not available
-pytestmark = pytest.mark.skipif(not _has_aws_credentials(), reason='AWS credentials not configured')
+# Real Bedrock calls: excluded from the unit gate (-m 'not integration'), skipped without credentials
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not _has_aws_credentials(), reason='AWS credentials not configured'),
+]
 
 
 @pytest.fixture

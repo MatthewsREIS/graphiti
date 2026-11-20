@@ -319,8 +319,11 @@ class LLMClientFactory:
                 from graphiti_core.llm_client.amazon_bedrock_client import AmazonBedrockLLMClient
 
                 logger.info('Creating Amazon Bedrock LLM client')
+                bedrock_llm_kwargs = {}
+                if config.temperature is not None:
+                    bedrock_llm_kwargs['temperature'] = config.temperature
                 return AmazonBedrockLLMClient(
-                    config=GraphitiLLMConfig(model=config.model),
+                    config=GraphitiLLMConfig(model=config.model, **bedrock_llm_kwargs),
                     region=config.providers.bedrock.region,
                     max_tokens=config.max_tokens or 4096,
                     credentials=_bedrock_credentials(config.providers.bedrock),
@@ -460,6 +463,14 @@ class EmbedderFactory:
                 raise ValueError(f'Unsupported Embedder provider: {provider}')
 
 
+class PassthroughReranker(CrossEncoderClient):
+    """Keeps the incoming order. Used when no reranker can authenticate."""
+
+    async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
+        n = len(passages)
+        return [(passage, float(n - i)) for i, passage in enumerate(passages)]
+
+
 class CrossEncoderFactory:
     """Factory for creating cross-encoder (reranker) clients based on configuration.
 
@@ -559,6 +570,16 @@ class CrossEncoderFactory:
             case 'bedrock':
                 if not config.providers.bedrock:
                     return None
+                bedrock = config.providers.bedrock
+                if bedrock.bearer_token and not (bedrock.access_key_id or bedrock.profile):
+                    # The Bedrock Rerank API (bedrock-agent-runtime) does not accept Bedrock API
+                    # keys, so a bearer-token-only deployment cannot rerank with Bedrock.
+                    logger.warning(
+                        'Bedrock API key without IAM credentials cannot call the Bedrock '
+                        'reranker; keeping search order. Set access_key_id/secret_access_key or '
+                        'profile to enable it.'
+                    )
+                    return PassthroughReranker()
                 try:
                     from graphiti_core.cross_encoder.amazon_bedrock_reranker_client import (
                         DEFAULT_MODEL,
