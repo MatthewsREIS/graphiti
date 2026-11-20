@@ -2,18 +2,12 @@ name: Build graphiti-mcp image to ECR
 
 # Matthews fork only. Builds the MCP server from this checkout (Bedrock Converse
 # support, not on PyPI) and pushes it to the private ECR repo as sha-<7>.
+# Every main commit gets an image: ArgoCD deploys the synced commit as sha-<7>.
 # The role trusts only this repo's main branch (terraform-aws-platform,
 # common/github_oidc.tf), so this cannot push from PRs or other branches.
 on:
   push:
     branches: [main]
-    paths:
-      - graphiti_core/**
-      - mcp_server/**
-      - pyproject.toml
-      - uv.lock
-      - .dockerignore
-      - .github/workflows/build-graphiti-mcp-image.yml
   workflow_dispatch:
 
 permissions:

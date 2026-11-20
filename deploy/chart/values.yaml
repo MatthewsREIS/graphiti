@@ -14,7 +14,7 @@ bedrock:
   embedderDimensions: 1024
 
 neo4j:
-  uri: bolt://graphiti-neo4j.graphiti-neo4j.svc.cluster.local:7687
+  uri: bolt://graphiti-neo4j.graphiti.svc.cluster.local:7687
   user: neo4j
   database: neo4j
 
