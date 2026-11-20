@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "graphiti-mcp.name" . }}
+  labels:
+    {{- include "graphiti-mcp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "graphiti-mcp.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "graphiti-mcp.labels" . | nindent 8 }}
+      annotations:
+        # Roll the pod when the Secret changes
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: graphiti-mcp
+          image: "{{ .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # The MCP server reads these over config.yaml (env vars use __ for nesting)
+            - { name: LLM__PROVIDER, value: bedrock }
+            - { name: LLM__MODEL, value: {{ .Values.bedrock.llmModel | quote }} }
+            - { name: EMBEDDER__PROVIDER, value: bedrock }
+            - { name: EMBEDDER__MODEL, value: {{ .Values.bedrock.embedderModel | quote }} }
+            - { name: EMBEDDER__DIMENSIONS, value: {{ .Values.bedrock.embedderDimensions | quote }} }
+            - { name: DATABASE__PROVIDER, value: neo4j }
+            - { name: AWS_REGION, value: {{ .Values.bedrock.region | quote }} }
+            - { name: NEO4J_URI, value: {{ .Values.neo4j.uri | quote }} }
+            - { name: NEO4J_USER, value: {{ .Values.neo4j.user | quote }} }
+            - { name: NEO4J_DATABASE, value: {{ .Values.neo4j.database | quote }} }
+            - { name: GRAPHITI_GROUP_ID, value: {{ .Values.graphiti.groupId | quote }} }
+            - { name: SEMAPHORE_LIMIT, value: {{ .Values.graphiti.semaphoreLimit | quote }} }
+            - { name: GRAPHITI_TELEMETRY_ENABLED, value: "false" }
+            - { name: HOME, value: /tmp }
+          envFrom:
+            - secretRef:
+                name: {{ include "graphiti-mcp.name" . }}
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}

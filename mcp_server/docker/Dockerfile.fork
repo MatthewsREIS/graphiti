@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+# Graphiti MCP server built from THIS checkout's graphiti-core (Bedrock Converse support),
+# not a PyPI release. Build from the repo root:
+#   docker build -f mcp_server/docker/Dockerfile.fork -t graphiti-mcp-bedrock .
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_PYTHON=/usr/local/bin/python3 \
+    SERVER__HOST="0.0.0.0" PYTHONUNBUFFERED=1
+
+# Layout matches mcp_server's `graphiti-core = { path = '../' }` source: core at /app, server at /app/mcp_server
+COPY . /app
+WORKDIR /app/mcp_server
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
+
+RUN mkdir -p /var/log/graphiti
+EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+CMD ["uv", "run", "--no-sync", "main.py"]

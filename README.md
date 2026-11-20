@@ -240,6 +240,9 @@ pip install graphiti-core[falkordb,anthropic,google-genai]
 
 # Install with Amazon Neptune
 pip install graphiti-core[neptune]
+
+# Install with Amazon Bedrock
+pip install graphiti-core[bedrock]
 ```
 
 ## Default to Low Concurrency; LLM Provider 429 Rate Limit Errors
@@ -820,6 +823,17 @@ See the [specification](spec/concurrent-group-ingestion.md) for the design, the 
 application with its own orchestration, the telemetry, and the limits. See the
 [example](examples/concurrent_ingestion/) for a script that ingests a JSONL file with serial or concurrent
 ingestion.
+
+### Amazon Bedrock
+
+Graphiti supports Amazon Bedrock for LLM inference, embeddings, and reranking.
+
+```bash
+pip install "graphiti-core[bedrock]"
+# or: uv add "graphiti-core[bedrock]"
+```
+
+See [`examples/amazon-bedrock/`](examples/amazon-bedrock/README.md) for a complete working example (Claude / Titan / Cohere rerank via AWS credentials).
 
 ## Documentation
 

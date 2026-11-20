@@ -128,6 +128,19 @@ def reasoning_effort_for_model(model: str) -> str | None:
     return 'minimal'
 
 
+def _bedrock_credentials(provider_config):
+    """Build BedrockCredentials from provider config; empty strings count as unset."""
+    from graphiti_core.utils.bedrock import BedrockCredentials
+
+    return BedrockCredentials(
+        access_key_id=provider_config.access_key_id or None,
+        secret_access_key=provider_config.secret_access_key or None,
+        session_token=provider_config.session_token or None,
+        profile=provider_config.profile or None,
+        bearer_token=provider_config.bearer_token or None,
+    )
+
+
 class LLMClientFactory:
     """Factory for creating LLM clients based on configuration."""
 
@@ -300,6 +313,22 @@ class LLMClientFactory:
                 )
                 return GroqClient(config=llm_config)
 
+            case 'bedrock':
+                if not config.providers.bedrock:
+                    raise ValueError('Bedrock provider configuration not found')
+                from graphiti_core.llm_client.amazon_bedrock_client import AmazonBedrockLLMClient
+
+                logger.info('Creating Amazon Bedrock LLM client')
+                bedrock_llm_kwargs = {}
+                if config.temperature is not None:
+                    bedrock_llm_kwargs['temperature'] = config.temperature
+                return AmazonBedrockLLMClient(
+                    config=GraphitiLLMConfig(model=config.model, **bedrock_llm_kwargs),
+                    region=config.providers.bedrock.region,
+                    max_tokens=config.max_tokens or 4096,
+                    credentials=_bedrock_credentials(config.providers.bedrock),
+                )
+
             case _:
                 raise ValueError(f'Unsupported LLM provider: {provider}')
 
@@ -412,8 +441,34 @@ class EmbedderFactory:
                 )
                 return VoyageAIEmbedder(config=voyage_config)
 
+            case 'bedrock':
+                if not config.providers.bedrock:
+                    raise ValueError('Bedrock provider configuration not found')
+                from graphiti_core.embedder.amazon_bedrock import (
+                    AmazonBedrockEmbedder,
+                    AmazonBedrockEmbedderConfig,
+                )
+
+                logger.info('Creating Amazon Bedrock embedder')
+                return AmazonBedrockEmbedder(
+                    config=AmazonBedrockEmbedderConfig(
+                        model=config.model or 'amazon.titan-embed-text-v2:0',
+                        region=config.providers.bedrock.region,
+                        credentials=_bedrock_credentials(config.providers.bedrock),
+                        embedding_dim=config.dimensions or 1024,
+                    )
+                )
+
             case _:
                 raise ValueError(f'Unsupported Embedder provider: {provider}')
+
+
+class PassthroughReranker(CrossEncoderClient):
+    """Keeps the incoming order. Used when no reranker can authenticate."""
+
+    async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
+        n = len(passages)
+        return [(passage, float(n - i)) for i, passage in enumerate(passages)]
 
 
 class CrossEncoderFactory:
@@ -510,6 +565,40 @@ class CrossEncoderFactory:
                 logger.info(f'Using GeminiRerankerClient from {source} provider')
                 return GeminiRerankerClient(
                     config=GraphitiLLMConfig(api_key=config.providers.gemini.api_key)
+                )
+
+            case 'bedrock':
+                if not config.providers.bedrock:
+                    return None
+                bedrock = config.providers.bedrock
+                if bedrock.bearer_token and not (bedrock.access_key_id or bedrock.profile):
+                    # The Bedrock Rerank API (bedrock-agent-runtime) does not accept Bedrock API
+                    # keys, so a bearer-token-only deployment cannot rerank with Bedrock.
+                    logger.warning(
+                        'Bedrock API key without IAM credentials cannot call the Bedrock '
+                        'reranker; keeping search order. Set access_key_id/secret_access_key or '
+                        'profile to enable it.'
+                    )
+                    return PassthroughReranker()
+                try:
+                    from graphiti_core.cross_encoder.amazon_bedrock_reranker_client import (
+                        DEFAULT_MODEL,
+                        AmazonBedrockRerankerClient,
+                    )
+                except ImportError:
+                    logger.warning(
+                        'AmazonBedrockRerankerClient not available; skipping Bedrock reranker'
+                    )
+                    return None
+
+                # LLM/embedder model ids are not rerank models; only pass through known ids.
+                rerank_models = ('cohere.rerank-v3-5:0', 'amazon.rerank-v1:0')
+                model = config.model if config.model in rerank_models else DEFAULT_MODEL
+                logger.info(f'Using AmazonBedrockRerankerClient from {source} provider')
+                return AmazonBedrockRerankerClient(
+                    model=model,
+                    region=config.providers.bedrock.region,
+                    credentials=_bedrock_credentials(config.providers.bedrock),
                 )
 
             case _:

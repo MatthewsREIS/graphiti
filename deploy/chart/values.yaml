@@ -1,0 +1,42 @@
+image:
+  repository: 414790100315.dkr.ecr.us-west-2.amazonaws.com/matthewsreis/graphiti-mcp
+  pullPolicy: IfNotPresent
+  # sha-<7> from .github/workflows/build-graphiti-mcp-image.yml
+  tag: ""
+
+replicaCount: 1
+
+bedrock:
+  region: us-west-2
+  llmModel: openai.gpt-oss-120b-1:0
+  embedderModel: amazon.titan-embed-text-v2:0
+  # Must match the vector index in Neo4j. Changing it later requires re-embedding.
+  embedderDimensions: 1024
+
+neo4j:
+  uri: bolt://graphiti-neo4j.graphiti.svc.cluster.local:7687
+  user: neo4j
+  database: neo4j
+
+graphiti:
+  groupId: main
+  # Concurrent LLM calls per episode. Lower it if Bedrock returns throttling errors.
+  semaphoreLimit: 5
+
+# Rendered into a Secret. Set per environment; never commit real values.
+secrets:
+  bedrockApiKey: ""
+  neo4jPassword: ""
+
+service:
+  port: 8000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+podAnnotations: {}

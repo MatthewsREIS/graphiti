@@ -176,3 +176,145 @@ class TestAzureReasoningEffort:
         client = LLMClientFactory.create(self._config('gpt-4.1'))
         assert isinstance(client, AzureOpenAILLMClient)
         assert client.reasoning is None
+
+
+class TestBedrockFactories:
+    """Bedrock LLM / embedder factory routing (IRSA — no API key)."""
+
+    def test_llm_factory_bedrock(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr('boto3.client', MagicMock())
+
+        from config.schema import BedrockProviderConfig, LLMConfig, LLMProvidersConfig
+        from services.factories import LLMClientFactory
+
+        cfg = LLMConfig(
+            provider='bedrock',
+            model='au.anthropic.claude-sonnet-4-5-20250929-v1:0',
+            providers=LLMProvidersConfig(bedrock=BedrockProviderConfig(region='ap-southeast-2')),
+        )
+        client = LLMClientFactory.create(cfg)
+        assert client is not None
+        assert getattr(client, 'region', None) == 'ap-southeast-2'
+
+    def test_embedder_factory_bedrock(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr('boto3.client', MagicMock())
+
+        from config.schema import (
+            BedrockProviderConfig,
+            EmbedderConfig,
+            EmbedderProvidersConfig,
+        )
+        from services.factories import EmbedderFactory
+
+        cfg = EmbedderConfig(
+            provider='bedrock',
+            model='amazon.titan-embed-text-v2:0',
+            dimensions=1024,
+            providers=EmbedderProvidersConfig(
+                bedrock=BedrockProviderConfig(region='ap-southeast-2')
+            ),
+        )
+        client = EmbedderFactory.create(cfg)
+        assert client is not None
+
+    def test_bedrock_credentials_reach_boto3(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        boto3_client = MagicMock()
+        monkeypatch.setattr('boto3.client', boto3_client)
+
+        from config.schema import BedrockProviderConfig, LLMConfig, LLMProvidersConfig
+        from services.factories import LLMClientFactory
+
+        cfg = LLMConfig(
+            provider='bedrock',
+            model='openai.gpt-oss-120b-1:0',
+            providers=LLMProvidersConfig(
+                bedrock=BedrockProviderConfig(
+                    region='us-west-2',
+                    access_key_id='AKIATEST',
+                    secret_access_key='secret',
+                    session_token='',  # empty env expansion must count as unset
+                )
+            ),
+        )
+        LLMClientFactory.create(cfg)
+
+        kwargs = boto3_client.call_args.kwargs
+        assert kwargs['region_name'] == 'us-west-2'
+        assert kwargs['aws_access_key_id'] == 'AKIATEST'
+        assert kwargs['aws_secret_access_key'] == 'secret'
+        assert kwargs['aws_session_token'] is None
+
+    def test_bedrock_temperature_is_forwarded(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr('boto3.client', MagicMock())
+
+        from config.schema import BedrockProviderConfig, LLMConfig, LLMProvidersConfig
+        from services.factories import LLMClientFactory
+
+        cfg = LLMConfig(
+            provider='bedrock',
+            model='openai.gpt-oss-120b-1:0',
+            temperature=0.1,
+            max_tokens=2048,
+            providers=LLMProvidersConfig(bedrock=BedrockProviderConfig(region='us-west-2')),
+        )
+        client = LLMClientFactory.create(cfg)
+
+        assert client.temperature == 0.1
+        assert client.max_tokens == 2048
+
+    def test_bedrock_reranker_is_passthrough_with_api_key_only(self, monkeypatch):
+        import asyncio
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr('boto3.client', MagicMock())
+
+        from config.schema import (
+            BedrockProviderConfig,
+            EmbedderConfig,
+            EmbedderProvidersConfig,
+            LLMConfig,
+            LLMProvidersConfig,
+        )
+        from services.factories import CrossEncoderFactory
+
+        bedrock = BedrockProviderConfig(region='us-west-2', bearer_token='tok')
+        llm = LLMConfig(provider='bedrock', providers=LLMProvidersConfig(bedrock=bedrock))
+        emb = EmbedderConfig(provider='bedrock', providers=EmbedderProvidersConfig(bedrock=bedrock))
+
+        reranker = CrossEncoderFactory.create(llm, emb)
+
+        ranked = asyncio.run(reranker.rank('q', ['a', 'b', 'c']))
+        assert [p for p, _ in ranked] == ['a', 'b', 'c']
+        assert ranked[0][1] > ranked[1][1] > ranked[2][1]
+
+    def test_bedrock_reranker_is_real_with_iam_keys(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr('boto3.client', MagicMock())
+
+        from config.schema import (
+            BedrockProviderConfig,
+            EmbedderConfig,
+            EmbedderProvidersConfig,
+            LLMConfig,
+            LLMProvidersConfig,
+        )
+        from services.factories import CrossEncoderFactory
+
+        bedrock = BedrockProviderConfig(
+            region='us-west-2', access_key_id='AKIA', secret_access_key='s'
+        )
+        llm = LLMConfig(provider='bedrock', providers=LLMProvidersConfig(bedrock=bedrock))
+        emb = EmbedderConfig(provider='bedrock', providers=EmbedderProvidersConfig(bedrock=bedrock))
+
+        reranker = CrossEncoderFactory.create(llm, emb)
+
+        assert type(reranker).__name__ == 'AmazonBedrockRerankerClient'

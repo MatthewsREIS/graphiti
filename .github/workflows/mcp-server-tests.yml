@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   live-mcp-tests:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-latest
     environment: development
     # Insurance against a hung stdio subprocess / uv sync.
     timeout-minutes: 20
@@ -88,7 +88,9 @@ jobs:
         # `development` environment. Runs right before the tests so the token is fresh.
         # GitHub already gives fork PRs a read-only id-token; this check also stops a
         # fork PR when the repo sends write tokens to fork workflows.
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        # Skipped when the OpenAI identity variables are not configured (e.g. MatthewsREIS/graphiti):
+        # the suite then self-skips below.
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.OPENAI_IDENTITY_PROVIDER_ID != ''
         uses: ./.github/actions/openai-workload-identity
         with:
           identity-provider-id: ${{ vars.OPENAI_IDENTITY_PROVIDER_ID }}

@@ -1,0 +1,61 @@
+name: Build graphiti-mcp image to ECR
+
+# Matthews fork only. Builds the MCP server from this checkout (Bedrock Converse
+# support, not on PyPI) and pushes it to the private ECR repo as sha-<7>.
+# Every main commit gets an image: ArgoCD deploys the synced commit as sha-<7>.
+# The role trusts only this repo's main branch (terraform-aws-platform,
+# common/github_oidc.tf), so this cannot push from PRs or other branches.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # sts:AssumeRoleWithWebIdentity
+  contents: read
+
+# One group per commit: a shared group keeps only one pending run, so a middle commit's
+# image would never be built.
+concurrency:
+  group: build-graphiti-mcp-image-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-west-2
+  REPOSITORY: matthewsreis/graphiti-mcp
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::414790100315:role/ci-push-graphiti-mcp
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Set tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # EKS nodes are amd64
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: mcp_server/docker/Dockerfile.fork
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.REPOSITORY }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.REPOSITORY }}:buildcache,mode=max,image-manifest=true
+
+      - name: Emit notice
+        run: echo "::notice title=Image pushed::${REPOSITORY}:${{ steps.tag.outputs.tag }}"
