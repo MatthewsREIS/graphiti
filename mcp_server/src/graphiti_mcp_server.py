@@ -39,6 +39,7 @@ from models.response_types import (
     SuccessResponse,
     TripletResponse,
 )
+from services.auth import build_auth_kwargs
 from services.factories import (
     CrossEncoderFactory,
     DatabaseDriverFactory,
@@ -175,9 +176,11 @@ server requires a configured database and valid API keys for language-model oper
 """
 
 # MCP server instance
+# Bearer-token auth is on when MCP_AUTH_ISSUER_URL and MCP_AUTH_RESOURCE_URL are set.
 mcp = MCPServer(
     'Graphiti Agent Memory',
     instructions=GRAPHITI_MCP_INSTRUCTIONS,
+    **build_auth_kwargs(),
 )
 
 # Global services
