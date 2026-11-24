@@ -13,6 +13,12 @@ spec:
     tls:
       secretName: {{ required "httpProxy.tlsSecretName is required when httpProxy.enabled" .Values.httpProxy.tlsSecretName }}
   routes:
+    # The server answers /mcp/ with a redirect to http://, after the token was already sent, so
+    # never forward it. The longer prefix wins over /mcp. Clients must use /mcp.
+    - conditions:
+        - prefix: /mcp/
+      directResponsePolicy:
+        statusCode: 404
     # Only requests carrying the bearer token are routed; everything else gets a 404 from Contour.
     # Only /mcp is exposed, so /health stays cluster-internal.
     - conditions:
