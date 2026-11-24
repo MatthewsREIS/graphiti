@@ -21,12 +21,12 @@ class Requirement(BaseModel):
     9. Categorize requirements appropriately based on their domain or function
     """
 
-    project_name: str = Field(
-        ...,
+    project_name: str | None = Field(
+        None,
         description='The name of the project to which the requirement belongs.',
     )
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Description of the requirement. Only use information mentioned in the context to write this description.',
     )
 
@@ -58,8 +58,8 @@ class Procedure(BaseModel):
     9. Summarize complex procedures while maintaining critical details
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the procedure. Only use information mentioned in the context to write this description.',
     )
 
@@ -80,8 +80,8 @@ class Location(BaseModel):
     7. Note any significant activities or events associated with the location
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the location and its significance. Only use information mentioned in the context.',
     )
 
@@ -100,8 +100,8 @@ class Event(BaseModel):
     8. Extract both recurring events and one-time occurrences
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the event. Only use information mentioned in the context.',
     )
 
@@ -122,8 +122,8 @@ class Object(BaseModel):
     7. Avoid extracting objects that are better classified as Documents or other types
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the object. Only use information mentioned in the context.',
     )
 
@@ -144,8 +144,8 @@ class Topic(BaseModel):
     7. Avoid extracting topics that are better classified as Events, Documents, or Organizations
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the topic and its context. Only use information mentioned in the context.',
     )
 
@@ -160,8 +160,8 @@ class Person(BaseModel):
     4. Only record attributes that are present in the context
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the person. Only use information mentioned in the context.',
     )
 
@@ -179,8 +179,8 @@ class Organization(BaseModel):
     7. Extract both large entities and small groups if formally organized
     """
 
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the organization. Only use information mentioned in the context.',
     )
 
@@ -198,12 +198,12 @@ class Document(BaseModel):
     7. Include document status (draft, published, archived) when mentioned
     """
 
-    title: str = Field(
-        ...,
+    title: str | None = Field(
+        None,
         description='The title or identifier of the document',
     )
-    description: str = Field(
-        ...,
+    description: str | None = Field(
+        None,
         description='Brief description of the document and its content. Only use information mentioned in the context.',
     )
 
