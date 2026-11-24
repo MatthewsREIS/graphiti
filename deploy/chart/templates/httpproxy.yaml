@@ -21,8 +21,8 @@ spec:
             name: Authorization
             exact: {{ printf "Bearer %s" (required "httpProxy.bearerToken is required when httpProxy.enabled" .Values.httpProxy.bearerToken) | quote }}
       timeoutPolicy:
-        response: {{ .Values.httpProxy.timeout }}
-        idle: {{ .Values.httpProxy.timeout }}
+        response: {{ .Values.httpProxy.responseTimeout }}
+        idle: {{ .Values.httpProxy.idleTimeout }}
       services:
         - name: {{ include "graphiti-mcp.name" . }}
           port: {{ .Values.service.port }}

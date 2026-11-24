@@ -38,8 +38,11 @@ httpProxy:
   tlsSecretName: ""
   # Clients send "Authorization: Bearer <token>". Required when enabled.
   bearerToken: ""
-  # Long enough for streaming responses.
-  timeout: 300s
+  # Contour's response timeout spans the whole response, so a finite value ends an open
+  # streaming (SSE) connection even while data is flowing. "infinity" disables it.
+  responseTimeout: infinity
+  # Closes a connection that has been silent this long.
+  idleTimeout: 1h
 
 resources:
   requests:
