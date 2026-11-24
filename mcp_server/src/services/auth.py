@@ -64,7 +64,8 @@ class JWTTokenVerifier:
         self._audience = audience
         self._algorithms = list(algorithms)
         if key_resolver is None:
-            jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True, lifespan=300, timeout=10)
+            # No per-key cache: it never expires, so a key removed from the issuer would stay trusted.
+            jwks_client = jwt.PyJWKClient(jwks_url, lifespan=300, timeout=10)
             key_resolver = lambda token: jwks_client.get_signing_key_from_jwt(token).key  # noqa: E731
         self._resolve_key = key_resolver
 

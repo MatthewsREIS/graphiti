@@ -32,7 +32,10 @@ service:
   port: 8000
 
 # OAuth for /mcp: clients sign in with the issuer (Keycloak) and the server checks the token.
-# Both or neither. Set httpProxy.bearerToken OR this, never both.
+# Both or neither.
+# Moving a public route from httpProxy.bearerToken to this takes two releases, so no pod ever serves
+# /mcp unauthenticated while the route is open: 1) set this and keep bearerToken (pods enforce OAuth,
+# the token gate blocks everyone), wait for the rollout; 2) remove bearerToken.
 auth:
   issuerUrl: ""
   resourceUrl: ""
@@ -42,7 +45,7 @@ httpProxy:
   enabled: false
   fqdn: ""
   tlsSecretName: ""
-  # Shared-token mode: clients send "Authorization: Bearer <token>". Leave empty when auth.issuerUrl is set.
+  # Shared-token mode: clients send "Authorization: Bearer <token>". Remove once auth.issuerUrl is rolled out.
   bearerToken: ""
   # Contour's response timeout spans the whole response, so a finite value ends an open
   # streaming (SSE) connection even while data is flowing. "infinity" disables it.

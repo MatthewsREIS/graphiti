@@ -132,6 +132,19 @@ async def test_unreachable_key_set_rejects_instead_of_raising():
     assert await verifier.verify_token(_token()) is None
 
 
+def test_signing_keys_are_not_cached_past_the_key_set_lifespan(monkeypatch: pytest.MonkeyPatch):
+    seen = {}
+
+    class Client:
+        def __init__(self, uri, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(jwt, 'PyJWKClient', Client)
+    JWTTokenVerifier(issuer=ISSUER, audience=AUDIENCE, jwks_url='https://x')
+    assert not seen.get('cache_keys')
+    assert seen['lifespan'] == 300
+
+
 def test_auth_is_off_when_nothing_is_configured():
     assert build_auth_kwargs(AuthConfig(_env_file=None)) == {}
 

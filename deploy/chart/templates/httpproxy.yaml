@@ -1,7 +1,4 @@
 {{- if .Values.httpProxy.enabled }}
-{{- if and .Values.auth.issuerUrl .Values.httpProxy.bearerToken }}
-{{- fail "set only one of auth.issuerUrl and httpProxy.bearerToken: the token check would block logins" }}
-{{- end }}
 {{- if not (or .Values.auth.issuerUrl .Values.httpProxy.bearerToken) }}
 {{- fail "httpProxy.enabled needs auth.issuerUrl or httpProxy.bearerToken: /mcp must not be public without auth" }}
 {{- end }}
@@ -37,7 +34,8 @@ spec:
     - conditions:
         - prefix: /mcp
         {{- if .Values.httpProxy.bearerToken }}
-        # Shared-token mode: requests without the exact token get a 404 from Contour.
+        # Requests without the exact token get a 404 from Contour. With auth.issuerUrl also set this
+        # is the migration step: pods enforce OAuth while this gate stays shut. See values.yaml.
         - header:
             name: Authorization
             exact: {{ printf "Bearer %s" .Values.httpProxy.bearerToken | quote }}
