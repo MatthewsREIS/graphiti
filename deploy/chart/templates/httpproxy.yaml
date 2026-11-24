@@ -1,0 +1,29 @@
+{{- if .Values.httpProxy.enabled }}
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: {{ include "graphiti-mcp.name" . }}
+  labels:
+    {{- include "graphiti-mcp.labels" . | nindent 4 }}
+  annotations:
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+spec:
+  virtualhost:
+    fqdn: {{ required "httpProxy.fqdn is required when httpProxy.enabled" .Values.httpProxy.fqdn }}
+    tls:
+      secretName: {{ required "httpProxy.tlsSecretName is required when httpProxy.enabled" .Values.httpProxy.tlsSecretName }}
+  routes:
+    # Only requests carrying the bearer token are routed; everything else gets a 404 from Contour.
+    # Only /mcp is exposed, so /health stays cluster-internal.
+    - conditions:
+        - prefix: /mcp
+        - header:
+            name: Authorization
+            exact: {{ printf "Bearer %s" (required "httpProxy.bearerToken is required when httpProxy.enabled" .Values.httpProxy.bearerToken) | quote }}
+      timeoutPolicy:
+        response: {{ .Values.httpProxy.responseTimeout }}
+        idle: {{ .Values.httpProxy.idleTimeout }}
+      services:
+        - name: {{ include "graphiti-mcp.name" . }}
+          port: {{ .Values.service.port }}
+{{- end }}
