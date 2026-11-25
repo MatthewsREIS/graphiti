@@ -46,6 +46,10 @@ spec:
             - { name: GRAPHITI_GROUP_ID, value: {{ .Values.graphiti.groupId | quote }} }
             - { name: SEMAPHORE_LIMIT, value: {{ .Values.graphiti.semaphoreLimit | quote }} }
             - { name: GRAPHITI_TELEMETRY_ENABLED, value: "false" }
+            {{- if or .Values.auth.issuerUrl .Values.auth.resourceUrl }}
+            - { name: MCP_AUTH_ISSUER_URL, value: {{ required "auth.issuerUrl is required with auth.resourceUrl" .Values.auth.issuerUrl | quote }} }
+            - { name: MCP_AUTH_RESOURCE_URL, value: {{ required "auth.resourceUrl is required with auth.issuerUrl" .Values.auth.resourceUrl | quote }} }
+            {{- end }}
             - { name: HOME, value: /tmp }
           envFrom:
             - secretRef:

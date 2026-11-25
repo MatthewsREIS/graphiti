@@ -1,4 +1,7 @@
 {{- if .Values.httpProxy.enabled }}
+{{- if not (or .Values.auth.issuerUrl .Values.httpProxy.bearerToken) }}
+{{- fail "httpProxy.enabled needs auth.issuerUrl or httpProxy.bearerToken: /mcp must not be public without auth" }}
+{{- end }}
 apiVersion: projectcontour.io/v1
 kind: HTTPProxy
 metadata:
@@ -13,19 +16,30 @@ spec:
     tls:
       secretName: {{ required "httpProxy.tlsSecretName is required when httpProxy.enabled" .Values.httpProxy.tlsSecretName }}
   routes:
-    # The server answers /mcp/ with a redirect to http://, after the token was already sent, so
+    # The server answers /mcp/ with a redirect to http://, after credentials were already sent, so
     # never forward it. The longer prefix wins over /mcp. Clients must use /mcp.
     - conditions:
         - prefix: /mcp/
       directResponsePolicy:
         statusCode: 404
-    # Only requests carrying the bearer token are routed; everything else gets a 404 from Contour.
+    {{- if .Values.auth.issuerUrl }}
+    # Tells a client which issuer to sign in with. Public by design; it holds no secrets.
+    - conditions:
+        - prefix: /.well-known/oauth-protected-resource
+      services:
+        - name: {{ include "graphiti-mcp.name" . }}
+          port: {{ .Values.service.port }}
+    {{- end }}
     # Only /mcp is exposed, so /health stays cluster-internal.
     - conditions:
         - prefix: /mcp
+        {{- if .Values.httpProxy.bearerToken }}
+        # Requests without the exact token get a 404 from Contour. With auth.issuerUrl also set this
+        # is the migration step: pods enforce OAuth while this gate stays shut. See values.yaml.
         - header:
             name: Authorization
-            exact: {{ printf "Bearer %s" (required "httpProxy.bearerToken is required when httpProxy.enabled" .Values.httpProxy.bearerToken) | quote }}
+            exact: {{ printf "Bearer %s" .Values.httpProxy.bearerToken | quote }}
+        {{- end }}
       timeoutPolicy:
         response: {{ .Values.httpProxy.responseTimeout }}
         idle: {{ .Values.httpProxy.idleTimeout }}
